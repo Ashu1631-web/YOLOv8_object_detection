@@ -21,9 +21,19 @@ else:
 uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg", "jpeg", "png", "mp4"])
 
 if uploaded_file is not None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+        tmp_file.write(uploaded_file.getbuffer())
+        tmp_path = tmp_file.name
+
+    results = model(tmp_path, conf=confidence)
+
+    annotated_frame = results[0].plot()
+    st.image(annotated_frame, caption="Detection Result", use_column_width=True)
+
+    os.remove(tmp_path)
     # Save uploaded file temporarily
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-        tmp_file.write(uploaded_file.read())
+        tmp_file.write(uploaded_file.getbuffer())
         tmp_path = tmp_file.name
 
     # Run detection
