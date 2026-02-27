@@ -3,6 +3,7 @@ import streamlit as st
 from PIL import Image
 import tempfile
 import os
+import torch
 
 st.title("🚀 YOLOv8 Object Detection System")
 
@@ -15,8 +16,10 @@ confidence = st.slider("Confidence Threshold", 0.0, 1.0, 0.5)
 
 if model_option == "COCO Model (yolov8n.pt)":
     model = YOLO("yolov8n.pt")
+    model.to("cpu")
 else:
     model = YOLO("best.pt")
+    model.to("cpu")
 
 uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg", "jpeg", "png", "mp4"])
 
