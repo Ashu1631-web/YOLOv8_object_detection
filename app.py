@@ -1,51 +1,63 @@
-from ultralytics import YOLO
 import streamlit as st
-from PIL import Image
+from ultralytics import YOLO
 import tempfile
 import os
 import torch
+from PIL import Image
+import numpy as np
+
+# Force CPU (important for Streamlit Cloud)
+device = "cpu"
+
+st.set_page_config(page_title="YOLOv8 Object Detection", layout="wide")
 
 st.title("🚀 YOLOv8 Object Detection System")
 
+# Model selection
 model_option = st.selectbox(
     "Select Model",
     ["COCO Model (yolov8n.pt)", "Custom Model (best.pt)"]
 )
 
-confidence = st.slider("Confidence Threshold", 0.0, 1.0, 0.5)
+# Load model safely
+@st.cache_resource
+def load_model(model_path):
+    model = YOLO(model_path)
+    model.to(device)
+    return model
 
 if model_option == "COCO Model (yolov8n.pt)":
-    model = YOLO("yolov8n.pt")
-    model.to("cpu")
+    model = load_model("yolov8n.pt")
 else:
-    model = YOLO("best.pt")
-    model.to("cpu")
+    model = load_model("best.pt")
 
-uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg", "jpeg", "png", "mp4"])
+confidence = st.slider("Confidence Threshold", 0.0, 1.0, 0.5)
+
+uploaded_file = st.file_uploader(
+    "Upload Image",
+    type=["jpg", "jpeg", "png"]
+)
 
 if uploaded_file is not None:
+    # Save uploaded file temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
         tmp_file.write(uploaded_file.getbuffer())
         tmp_path = tmp_file.name
 
-    results = model(tmp_path, conf=confidence)
+    try:
+        # Run detection
+        results = model(tmp_path, conf=confidence)
 
-    annotated_frame = results[0].plot()
-    st.image(annotated_frame, caption="Detection Result", use_column_width=True)
+        # Get annotated image
+        annotated_frame = results[0].plot()
 
-    os.remove(tmp_path)
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-        tmp_file.write(uploaded_file.getbuffer())
-        tmp_path = tmp_file.name
+        # Convert to RGB (Streamlit compatibility)
+        annotated_frame = Image.fromarray(annotated_frame[..., ::-1])
 
-    # Run detection
-    results = model(tmp_path, conf=confidence)
+        st.image(annotated_frame, caption="Detection Result", use_column_width=True)
 
-    # Plot results
-    annotated_frame = results[0].plot()
+    except Exception as e:
+        st.error(f"Error during detection: {e}")
 
-    st.image(annotated_frame, caption="Detection Result", use_column_width=True)
-
-    # Cleanup temp file
-    os.remove(tmp_path)
+    finally:
+        os.remove(tmp_path)
