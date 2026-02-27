@@ -1,56 +1,38 @@
-import streamlit as st
 from ultralytics import YOLO
-import cv2
+import streamlit as st
+from PIL import Image
 import tempfile
-
-st.set_page_config(page_title="YOLOv8 Detection App", layout="wide")
+import os
 
 st.title("🚀 YOLOv8 Object Detection System")
-st.write("Upload Image or Video for Detection")
 
-# Model selection
 model_option = st.selectbox(
     "Select Model",
-    ["Custom Model (best.pt)", "COCO Model (yolov8n.pt)"]
+    ["COCO Model (yolov8n.pt)", "Custom Model (best.pt)"]
 )
 
-if model_option == "Custom Model (best.pt)":
-    model = YOLO("best.pt")
+confidence = st.slider("Confidence Threshold", 0.0, 1.0, 0.5)
+
+if model_option == "COCO Model (yolov8n.pt)":
+    model = YOLO("yolov8n.pt")
 else:
-    model = YOLO("models/yolov8n.pt")
+    model = YOLO("best.pt")
 
-confidence = st.slider("Confidence Threshold", 0.1, 1.0, 0.5)
-
-uploaded_file = st.file_uploader(
-    "Upload Image or Video",
-    type=["jpg", "jpeg", "png", "mp4"]
-)
+uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg", "jpeg", "png", "mp4"])
 
 if uploaded_file is not None:
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_file.read())
+    # Save uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        tmp_path = tmp_file.name
 
-    # IMAGE DETECTION
-    if uploaded_file.type.startswith("image"):
-        results = model(tfile.name, conf=confidence)
-        annotated = results[0].plot()
-        st.image(annotated, channels="BGR")
+    # Run detection
+    results = model(tmp_path, conf=confidence)
 
-    # VIDEO DETECTION
-    else:
-        cap = cv2.VideoCapture(tfile.name)
-        stframe = st.empty()
+    # Plot results
+    annotated_frame = results[0].plot()
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+    st.image(annotated_frame, caption="Detection Result", use_column_width=True)
 
-            results = model(frame, conf=confidence)
-            annotated = results[0].plot()
-            stframe.image(annotated, channels="BGR")
-
-        cap.release()
-
-st.markdown("---")
-st.markdown("Developed using YOLOv8 + Streamlit")
+    # Cleanup temp file
+    os.remove(tmp_path)
