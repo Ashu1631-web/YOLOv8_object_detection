@@ -15,7 +15,7 @@ model_option = st.selectbox(
 )
 
 if model_option == "Custom Model (best.pt)":
-    model = YOLO("models/best.pt")
+    model = YOLO("best.pt")
 else:
     model = YOLO("models/yolov8n.pt")
 
