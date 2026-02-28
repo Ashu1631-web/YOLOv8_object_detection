@@ -28,23 +28,18 @@ def load_model(option):
 
 model = load_model(model_option)
 
-# ---------------- BRIGHTNESS & CONFIDENCE ----------------
-def calculate_brightness(image_rgb):
-    gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+# ---------------- BRIGHTNESS FUNCTION ----------------
+def calculate_brightness(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return gray.mean()
 
 def auto_confidence(brightness):
     if brightness < 50:
-        return 0.20
+        return 0.05
     elif brightness < 100:
-        return 0.25
+        return 0.10
     else:
-        return 0.30
-
-# ---------------- SAFE DISPLAY ----------------
-def display_bgr(image_bgr):
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    st.image(image_rgb)
+        return 0.25
 
 # ---------------- METRICS ----------------
 st.sidebar.subheader("📊 Evaluation Metrics")
@@ -84,44 +79,34 @@ if os.path.exists(dataset_path):
 
             # -------- IMAGE --------
             if ext in ["jpg", "jpeg", "png"]:
+                img = cv2.imread(file_path)
 
-                img_bgr = cv2.imread(file_path)
-                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-
-                brightness = calculate_brightness(img_rgb)
+                brightness = calculate_brightness(img)
                 conf = auto_confidence(brightness)
 
                 if brightness < 80:
-                    img_rgb = cv2.convertScaleAbs(img_rgb, alpha=1.3, beta=25)
+                    img = cv2.convertScaleAbs(img, alpha=1.4, beta=30)
 
                 start = time.time()
-                results = model.predict(
-                    img_rgb,
-                    conf=conf,
-                    iou=0.45,
-                    max_det=50
-                )
+                results = model.predict(img, conf=conf)
                 end = time.time()
 
                 fps = 1 / (end - start)
                 annotated = results[0].plot()
 
-                display_bgr(annotated)
-
+                st.image(annotated, channels="BGR")
                 st.success(f"FPS: {fps:.2f}")
                 st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
 
             # -------- VIDEO --------
             elif ext in ["mp4", "avi"]:
-
                 cap = cv2.VideoCapture(file_path)
                 stframe = st.empty()
-
                 frame_skip = 2
                 frame_count = 0
 
                 while cap.isOpened():
-                    ret, frame_bgr = cap.read()
+                    ret, frame = cap.read()
                     if not ret:
                         break
 
@@ -129,29 +114,22 @@ if os.path.exists(dataset_path):
                     if frame_count % frame_skip != 0:
                         continue
 
-                    frame_bgr = cv2.resize(frame_bgr, (640, 480))
-                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                    frame = cv2.resize(frame, (640, 480))
 
-                    brightness = calculate_brightness(frame_rgb)
+                    brightness = calculate_brightness(frame)
                     conf = auto_confidence(brightness)
 
                     if brightness < 80:
-                        frame_rgb = cv2.convertScaleAbs(frame_rgb, alpha=1.3, beta=25)
+                        frame = cv2.convertScaleAbs(frame, alpha=1.4, beta=30)
 
                     start = time.time()
-                    results = model.predict(
-                        frame_rgb,
-                        conf=conf,
-                        iou=0.45,
-                        max_det=50
-                    )
+                    results = model.predict(frame, conf=conf)
                     end = time.time()
 
                     fps = 1 / (end - start)
                     annotated = results[0].plot()
 
-                    annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-                    stframe.image(annotated_rgb)
+                    stframe.image(annotated, channels="BGR")
                     st.caption(f"FPS: {fps:.2f}")
 
                 cap.release()
@@ -165,41 +143,30 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
-
     ext = uploaded_file.name.split(".")[-1].lower()
 
-    # -------- IMAGE --------
     if ext in ["jpg", "jpeg", "png"]:
-
         image = Image.open(uploaded_file)
-        img_rgb = np.array(image)
+        img_array = np.array(image)
 
-        brightness = calculate_brightness(img_rgb)
+        brightness = calculate_brightness(img_array)
         conf = auto_confidence(brightness)
 
         if brightness < 80:
-            img_rgb = cv2.convertScaleAbs(img_rgb, alpha=1.3, beta=25)
+            img_array = cv2.convertScaleAbs(img_array, alpha=1.4, beta=30)
 
         start = time.time()
-        results = model.predict(
-            img_rgb,
-            conf=conf,
-            iou=0.45,
-            max_det=50
-        )
+        results = model.predict(img_array, conf=conf)
         end = time.time()
 
         fps = 1 / (end - start)
         annotated = results[0].plot()
 
-        display_bgr(annotated)
-
+        st.image(annotated, channels="BGR")
         st.success(f"FPS: {fps:.2f}")
         st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
 
-    # -------- VIDEO --------
     elif ext in ["mp4", "avi"]:
-
         temp_path = "temp_video.mp4"
 
         with open(temp_path, "wb") as f:
@@ -207,12 +174,11 @@ if uploaded_file:
 
         cap = cv2.VideoCapture(temp_path)
         stframe = st.empty()
-
         frame_skip = 2
         frame_count = 0
 
         while cap.isOpened():
-            ret, frame_bgr = cap.read()
+            ret, frame = cap.read()
             if not ret:
                 break
 
@@ -220,29 +186,22 @@ if uploaded_file:
             if frame_count % frame_skip != 0:
                 continue
 
-            frame_bgr = cv2.resize(frame_bgr, (640, 480))
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            frame = cv2.resize(frame, (640, 480))
 
-            brightness = calculate_brightness(frame_rgb)
+            brightness = calculate_brightness(frame)
             conf = auto_confidence(brightness)
 
             if brightness < 80:
-                frame_rgb = cv2.convertScaleAbs(frame_rgb, alpha=1.3, beta=25)
+                frame = cv2.convertScaleAbs(frame, alpha=1.4, beta=30)
 
             start = time.time()
-            results = model.predict(
-                frame_rgb,
-                conf=conf,
-                iou=0.45,
-                max_det=50
-            )
+            results = model.predict(frame, conf=conf)
             end = time.time()
 
             fps = 1 / (end - start)
             annotated = results[0].plot()
 
-            annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-            stframe.image(annotated_rgb)
+            stframe.image(annotated, channels="BGR")
             st.caption(f"FPS: {fps:.2f}")
 
         cap.release()
@@ -253,15 +212,15 @@ st.subheader("📄 Project Report")
 with st.expander("Click to View Full Report"):
     st.markdown("""
     ### 🎯 Problem Statement
-    End-to-end YOLOv8 object detection system with training, evaluation, and deployment.
+    End-to-end YOLOv8 Object Detection system for training, evaluation and deployment.
 
     ### 📊 Performance
-    - mAP@0.5: 0.57  
-    - mAP@0.5:0.95: 0.40  
-    - Precision: 0.66  
-    - Recall: 0.53  
+    - mAP@0.5: 0.57
+    - mAP@0.5:0.95: 0.40
+    - Precision: 0.66
+    - Recall: 0.53
 
     ### 🚀 Conclusion
-    Model performs reliably with adaptive confidence, NMS tuning,
-    low-light enhancement, and real-time Streamlit deployment.
+    The model demonstrates reliable vehicle detection and real-time deployment
+    with adaptive confidence handling for low-light scenarios.
     """)
