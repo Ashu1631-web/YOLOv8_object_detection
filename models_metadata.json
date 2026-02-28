@@ -1,0 +1,9 @@
+[
+  {
+    "model_name": "yolov8n.pt",
+    "version": "v1.0",
+    "dataset": "COCO",
+    "mAP50": 0.57,
+    "date": "2026-02-28"
+  }
+]
