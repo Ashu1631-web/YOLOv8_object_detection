@@ -5,26 +5,37 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import tempfile
+import os
 from ultralytics import YOLO
 
 # -------------------------------------------------
 # PAGE CONFIG
 # -------------------------------------------------
-st.set_page_config(page_title="Yolo Object Detection", layout="wide")
+st.set_page_config(page_title="YOLO Object Detection", layout="wide")
 
 st.markdown("""
 <h2 style='text-align:center;color:#1F77B4;'>
-🚀Yolo Object Detection - Fast YOLOv8 Dashboard
+🚀 YOLO Object Detection - Fast YOLOv8 Dashboard
 </h2>
 <hr>
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# MODEL LOADER (CACHED)
+# MODEL LOADER (TRUE LAZY LOAD)
 # -------------------------------------------------
 @st.cache_resource
 def load_model(model_path):
     return YOLO(model_path)
+
+def get_model(model_option):
+    if (
+        "model" not in st.session_state
+        or st.session_state.model_name != model_option
+    ):
+        with st.spinner("Loading Model..."):
+            st.session_state.model = load_model(model_option)
+            st.session_state.model_name = model_option
+    return st.session_state.model
 
 # -------------------------------------------------
 # SIDEBAR SETTINGS
@@ -50,10 +61,13 @@ tab1, tab2 = st.tabs(["🔍 Detection", "📊 Analytics"])
 # -------------------------------------------------
 with tab1:
 
-    mode = st.radio("Select Mode", ["Image", "Video"])
+    mode = st.radio(
+        "Select Mode",
+        ["Upload Image", "Dataset Image", "Video"]
+    )
 
-    # ---------------- IMAGE ----------------
-    if mode == "Image":
+    # ---------------- UPLOAD IMAGE ----------------
+    if mode == "Upload Image":
 
         uploaded_image = st.file_uploader(
             "Upload Image",
@@ -62,16 +76,7 @@ with tab1:
 
         if uploaded_image:
 
-            # TRUE LAZY LOAD
-            if (
-                "model" not in st.session_state
-                or st.session_state.model_name != model_option
-            ):
-                with st.spinner("Loading Model..."):
-                    st.session_state.model = load_model(model_option)
-                    st.session_state.model_name = model_option
-
-            model = st.session_state.model
+            model = get_model(model_option)
 
             file_bytes = np.asarray(
                 bytearray(uploaded_image.read()),
@@ -92,6 +97,8 @@ with tab1:
             end = time.time()
             fps = 1 / (end - start)
 
+            st.session_state.last_results = results
+
             annotated = results[0].plot()
             annotated = cv2.cvtColor(
                 annotated,
@@ -107,18 +114,60 @@ with tab1:
                 st.metric("⚡ FPS", f"{fps:.2f}")
                 st.metric("📦 Objects", len(results[0].boxes))
 
-            # Download result
-            _, buffer = cv2.imencode(
-                ".jpg",
-                cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
-            )
+    # ---------------- DATASET IMAGE ----------------
+    if mode == "Dataset Image":
 
-            st.download_button(
-                "📥 Download Result",
-                buffer.tobytes(),
-                "result.jpg",
-                "image/jpeg"
-            )
+        dataset_path = "datasets"
+
+        if os.path.exists(dataset_path):
+
+            image_files = [
+                f for f in os.listdir(dataset_path)
+                if f.lower().endswith((".jpg", ".png", ".jpeg"))
+            ]
+
+            if image_files:
+
+                selected_image = st.selectbox(
+                    "Select Dataset Image",
+                    image_files
+                )
+
+                if selected_image:
+
+                    model = get_model(model_option)
+
+                    image_path = os.path.join(
+                        dataset_path,
+                        selected_image
+                    )
+
+                    image = cv2.imread(image_path)
+
+                    results = model.predict(
+                        source=image,
+                        conf=confidence,
+                        iou=iou,
+                        imgsz=imgsz,
+                        device="cpu"
+                    )
+
+                    st.session_state.last_results = results
+
+                    annotated = results[0].plot()
+                    annotated = cv2.cvtColor(
+                        annotated,
+                        cv2.COLOR_BGR2RGB
+                    )
+
+                    st.image(
+                        annotated,
+                        use_column_width=True
+                    )
+            else:
+                st.warning("No images found in datasets folder.")
+        else:
+            st.warning("datasets folder not found.")
 
     # ---------------- VIDEO ----------------
     if mode == "Video":
@@ -130,22 +179,16 @@ with tab1:
 
         if uploaded_video:
 
-            # TRUE LAZY LOAD
-            if (
-                "model" not in st.session_state
-                or st.session_state.model_name != model_option
-            ):
-                with st.spinner("Loading Model..."):
-                    st.session_state.model = load_model(model_option)
-                    st.session_state.model_name = model_option
-
-            model = st.session_state.model
+            model = get_model(model_option)
 
             tfile = tempfile.NamedTemporaryFile(delete=False)
             tfile.write(uploaded_video.read())
 
             cap = cv2.VideoCapture(tfile.name)
             stframe = st.empty()
+
+            all_class_ids = []
+            all_conf_scores = []
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -160,6 +203,16 @@ with tab1:
                     device="cpu"
                 )
 
+                boxes = results[0].boxes
+
+                if len(boxes) > 0:
+                    all_class_ids.extend(
+                        boxes.cls.cpu().numpy()
+                    )
+                    all_conf_scores.extend(
+                        boxes.conf.cpu().numpy()
+                    )
+
                 annotated = results[0].plot()
                 annotated = cv2.cvtColor(
                     annotated,
@@ -169,6 +222,10 @@ with tab1:
                 stframe.image(annotated)
 
             cap.release()
+
+            st.session_state.video_class_ids = all_class_ids
+            st.session_state.video_conf_scores = all_conf_scores
+
             st.success("Video Processing Completed")
 
 # -------------------------------------------------
@@ -176,24 +233,46 @@ with tab1:
 # -------------------------------------------------
 with tab2:
 
-    if "results" in locals():
+    # Image Analytics
+    if "last_results" in st.session_state:
 
-        boxes = results[0].boxes
+        boxes = st.session_state.last_results[0].boxes
 
         if len(boxes) > 0:
 
             class_ids = boxes.cls.cpu().numpy()
             conf_scores = boxes.conf.cpu().numpy()
 
-            st.subheader("Class Distribution")
+            st.subheader("📊 Image Class Distribution")
             st.bar_chart(
                 pd.Series(class_ids).value_counts()
             )
 
-            st.subheader("Confidence Distribution")
+            st.subheader("📈 Image Confidence Distribution")
+
             fig, ax = plt.subplots()
             ax.hist(conf_scores, bins=10)
+            ax.set_xlabel("Confidence")
+            ax.set_ylabel("Frequency")
             st.pyplot(fig)
 
-        else:
-            st.info("No detections yet.")
+    # Video Analytics
+    if "video_class_ids" in st.session_state:
+
+        st.subheader("🎬 Video Class Distribution")
+        st.bar_chart(
+            pd.Series(
+                st.session_state.video_class_ids
+            ).value_counts()
+        )
+
+        st.subheader("🎬 Video Confidence Distribution")
+
+        fig2, ax2 = plt.subplots()
+        ax2.hist(
+            st.session_state.video_conf_scores,
+            bins=10
+        )
+        ax2.set_xlabel("Confidence")
+        ax2.set_ylabel("Frequency")
+        st.pyplot(fig2)
