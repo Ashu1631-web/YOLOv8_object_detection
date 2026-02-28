@@ -28,7 +28,7 @@ def load_model(option):
 
 model = load_model(model_option)
 
-# ---------------- BRIGHTNESS FUNCTION ----------------
+# ---------------- BRIGHTNESS LOGIC ----------------
 def calculate_brightness(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return gray.mean()
@@ -79,6 +79,7 @@ if os.path.exists(dataset_path):
 
             # -------- IMAGE --------
             if ext in ["jpg", "jpeg", "png"]:
+
                 img = cv2.imread(file_path)
 
                 brightness = calculate_brightness(img)
@@ -92,16 +93,22 @@ if os.path.exists(dataset_path):
                 end = time.time()
 
                 fps = 1 / (end - start)
+
                 annotated = results[0].plot()
 
-                st.image(annotated, channels="BGR")
+                # 🔥 COLOR FIX
+                annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+
+                st.image(annotated_rgb)
                 st.success(f"FPS: {fps:.2f}")
                 st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
 
             # -------- VIDEO --------
             elif ext in ["mp4", "avi"]:
+
                 cap = cv2.VideoCapture(file_path)
                 stframe = st.empty()
+
                 frame_skip = 2
                 frame_count = 0
 
@@ -127,9 +134,13 @@ if os.path.exists(dataset_path):
                     end = time.time()
 
                     fps = 1 / (end - start)
+
                     annotated = results[0].plot()
 
-                    stframe.image(annotated, channels="BGR")
+                    # 🔥 COLOR FIX
+                    annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+
+                    stframe.image(annotated_rgb)
                     st.caption(f"FPS: {fps:.2f}")
 
                 cap.release()
@@ -143,9 +154,12 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
+
     ext = uploaded_file.name.split(".")[-1].lower()
 
+    # -------- IMAGE --------
     if ext in ["jpg", "jpeg", "png"]:
+
         image = Image.open(uploaded_file)
         img_array = np.array(image)
 
@@ -160,14 +174,19 @@ if uploaded_file:
         end = time.time()
 
         fps = 1 / (end - start)
+
         annotated = results[0].plot()
 
+        # 🔥 COLOR FIX
         annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+
         st.image(annotated_rgb)
         st.success(f"FPS: {fps:.2f}")
         st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
 
+    # -------- VIDEO --------
     elif ext in ["mp4", "avi"]:
+
         temp_path = "temp_video.mp4"
 
         with open(temp_path, "wb") as f:
@@ -175,6 +194,7 @@ if uploaded_file:
 
         cap = cv2.VideoCapture(temp_path)
         stframe = st.empty()
+
         frame_skip = 2
         frame_count = 0
 
@@ -200,9 +220,13 @@ if uploaded_file:
             end = time.time()
 
             fps = 1 / (end - start)
+
             annotated = results[0].plot()
 
-            stframe.image(annotated, channels="BGR")
+            # 🔥 COLOR FIX
+            annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+
+            stframe.image(annotated_rgb)
             st.caption(f"FPS: {fps:.2f}")
 
         cap.release()
