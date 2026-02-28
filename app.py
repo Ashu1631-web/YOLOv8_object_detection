@@ -7,56 +7,50 @@ import matplotlib.pyplot as plt
 import tempfile
 from ultralytics import YOLO
 
-# --------------------------------------------
+# -------------------------------------------------
 # PAGE CONFIG
-# --------------------------------------------
-st.set_page_config(page_title="Ashish AI Vision", layout="wide")
+# -------------------------------------------------
+st.set_page_config(page_title="Yolo Object Detection", layout="wide")
 
 st.markdown("""
 <h2 style='text-align:center;color:#1F77B4;'>
-🚀 Ashish AI Vision - Fast YOLOv8 Dashboard
+🚀Yolo Object Detection - Fast YOLOv8 Dashboard
 </h2>
 <hr>
 """, unsafe_allow_html=True)
 
-# --------------------------------------------
-# LAZY MODEL LOAD FUNCTION
-# --------------------------------------------
+# -------------------------------------------------
+# MODEL LOADER (CACHED)
+# -------------------------------------------------
 @st.cache_resource
-def load_model(path):
-    return YOLO(path)
+def load_model(model_path):
+    return YOLO(model_path)
 
-# --------------------------------------------
-# SIDEBAR
-# --------------------------------------------
+# -------------------------------------------------
+# SIDEBAR SETTINGS
+# -------------------------------------------------
 st.sidebar.header("⚙ Settings")
 
 model_option = st.sidebar.selectbox(
-    "Model",
-    ["yolov8s.pt", "best.pt", "yolov8n.pt"]
+    "Select Model",
+    ["yolov8n.pt", "yolov8s.pt", "best.pt"]
 )
 
 confidence = st.sidebar.slider("Confidence", 0.1, 1.0, 0.30)
-iou = st.sidebar.slider("IoU", 0.1, 1.0, 0.45)
+iou = st.sidebar.slider("IoU Threshold", 0.1, 1.0, 0.45)
 imgsz = st.sidebar.selectbox("Image Size", [320, 480, 640], index=2)
 
-# --------------------------------------------
+# -------------------------------------------------
 # TABS
-# --------------------------------------------
+# -------------------------------------------------
 tab1, tab2 = st.tabs(["🔍 Detection", "📊 Analytics"])
 
-# --------------------------------------------
+# -------------------------------------------------
 # DETECTION TAB
-# --------------------------------------------
+# -------------------------------------------------
 with tab1:
 
-    mode = st.radio("Mode", ["Image", "Video"])
-
-    # Lazy load model only when needed
-    if "model" not in st.session_state:
-        st.session_state.model = load_model(model_option)
-
-    model = st.session_state.model
+    mode = st.radio("Select Mode", ["Image", "Video"])
 
     # ---------------- IMAGE ----------------
     if mode == "Image":
@@ -67,6 +61,17 @@ with tab1:
         )
 
         if uploaded_image:
+
+            # TRUE LAZY LOAD
+            if (
+                "model" not in st.session_state
+                or st.session_state.model_name != model_option
+            ):
+                with st.spinner("Loading Model..."):
+                    st.session_state.model = load_model(model_option)
+                    st.session_state.model_name = model_option
+
+            model = st.session_state.model
 
             file_bytes = np.asarray(
                 bytearray(uploaded_image.read()),
@@ -125,6 +130,17 @@ with tab1:
 
         if uploaded_video:
 
+            # TRUE LAZY LOAD
+            if (
+                "model" not in st.session_state
+                or st.session_state.model_name != model_option
+            ):
+                with st.spinner("Loading Model..."):
+                    st.session_state.model = load_model(model_option)
+                    st.session_state.model_name = model_option
+
+            model = st.session_state.model
+
             tfile = tempfile.NamedTemporaryFile(delete=False)
             tfile.write(uploaded_video.read())
 
@@ -155,9 +171,9 @@ with tab1:
             cap.release()
             st.success("Video Processing Completed")
 
-# --------------------------------------------
-# ANALYTICS TAB (Lightweight)
-# --------------------------------------------
+# -------------------------------------------------
+# ANALYTICS TAB
+# -------------------------------------------------
 with tab2:
 
     if "results" in locals():
