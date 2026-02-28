@@ -32,7 +32,7 @@ confidence = st.slider("Confidence Threshold", 0.0, 1.0, 0.3)
 
 uploaded_file = st.file_uploader(
     "Upload Image or Video",
-    type=["jpg", "jpeg", "png", "mp4"]
+    type=["jpg", "jpeg", "png", "mp4", "avi"]
 )
 
 if uploaded_file is not None:
