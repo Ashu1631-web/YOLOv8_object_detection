@@ -27,18 +27,18 @@ mode = st.sidebar.radio("Mode", ["Image", "Video"])
 confidence = st.sidebar.slider("Confidence", 0.1, 1.0, 0.5)
 iou = st.sidebar.slider("IOU", 0.1, 1.0, 0.45)
 
-# Detect all .pt models in directory
+# Auto-detect .pt files
 model_files = [f for f in os.listdir() if f.endswith(".pt")]
 custom_model = st.sidebar.file_uploader("Upload Custom Model (.pt)", type=["pt"])
 
-if custom_model:
+if custom_model is not None:
     temp_model = tempfile.NamedTemporaryFile(delete=False)
     temp_model.write(custom_model.read())
     model_path = temp_model.name
 elif model_files:
     model_path = st.sidebar.selectbox("Select Model", model_files)
 else:
-    st.error("No .pt model found in directory.")
+    st.error("No .pt model found.")
     st.stop()
 
 model = load_model(model_path)
@@ -52,22 +52,66 @@ tab1, tab2 = st.tabs(["🚀 Detection", "📊 Evaluation"])
 
 # ================= DETECTION =================
 with tab1:
+
     st.title("🚀 YOLOv8 Detection")
 
-    # -------- IMAGE --------
     if mode == "Image":
+
         uploaded = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
-        if uploaded:
-            img = Image.open(uploaded)
-            img_np = np.array(img)
+        if uploaded is not None:
+
+            image = Image.open(uploaded)
+            img_np = np.array(image)
 
             col1, col2 = st.columns(2)
-            col1.image(img, caption="Original")
+            col1.image(image, caption="Original")
 
             results = model(img_np, conf=confidence, iou=iou)
 
             filtered_boxes = [
+                box for box in results[0].boxes
+                if model.names[int(box.cls)] in selected_classes
+            ]
+
+            results[0].boxes = filtered_boxes
+            result_img = results[0].plot()
+
+            col2.image(result_img, caption="Detected")
+
+            counts = Counter(model.names[int(b.cls)] for b in filtered_boxes)
+            conf_list = [float(b.conf) for b in filtered_boxes]
+
+            st.metric("Total Objects", sum(counts.values()))
+            st.table(counts)
+
+            if conf_list:
+                fig, ax = plt.subplots()
+                ax.hist(conf_list, bins=10)
+                ax.set_title("Confidence Histogram")
+                st.pyplot(fig)
+
+            if counts:
+                fig2, ax2 = plt.subplots()
+                ax2.bar(counts.keys(), counts.values())
+                ax2.set_title("Per-Class Count")
+                plt.xticks(rotation=45)
+                st.pyplot(fig2)
+
+            cv2.imwrite("detected.jpg",
+                        cv2.cvtColor(result_img, cv2.COLOR_RGB2BGR))
+
+            with open("detected.jpg", "rb") as f:
+                st.download_button("⬇ Download Result", f, "detected.jpg")
+
+    elif mode == "Video":
+
+        uploaded_vid = st.file_uploader("Upload Video", type=["mp4"])
+
+        if uploaded_vid is not None:
+
+            temp_vid = tempfile.NamedTemporaryFile(delete=False)
+            temp_vid.write(uploaded_vid.read            filtered_boxes = [
                 box for box in results[0].boxes
                 if model.names[int(box.cls)] in selected_classes
             ]
