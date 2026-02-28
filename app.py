@@ -6,10 +6,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import tempfile
+import os
 from ultralytics import YOLO
 
 # -------------------------------------------------
-# PAGE CONFIG + BRANDING
+# PAGE CONFIG
 # -------------------------------------------------
 st.set_page_config(page_title="Ashish AI Vision", layout="wide")
 
@@ -21,14 +22,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# MODEL LOADING (CACHED FOR PERFORMANCE)
+# MODEL LOAD (CACHED)
 # -------------------------------------------------
 @st.cache_resource
 def load_model(model_path):
     return YOLO(model_path)
 
 # -------------------------------------------------
-# SIDEBAR SETTINGS
+# SIDEBAR
 # -------------------------------------------------
 st.sidebar.header("⚙ Detection Settings")
 
@@ -43,9 +44,9 @@ imgsz = st.sidebar.selectbox("Image Size", [320, 480, 640], index=2)
 
 model = load_model(model_option)
 
-# Class Filtering
+# Class Filter
 class_filter = st.sidebar.multiselect(
-    "Filter Classes (Optional)",
+    "Filter Classes",
     list(model.names.values())
 )
 
@@ -59,18 +60,17 @@ if class_filter:
 # -------------------------------------------------
 # TABS
 # -------------------------------------------------
-tab1, tab2, tab3 = st.tabs(
-    ["🔍 Detection", "📊 Analytics", "🧪 Validation"]
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["🔍 Detection", "📊 Analytics", "🧪 Validation", "📄 Documentation"]
 )
 
 # -------------------------------------------------
-# DETECTION TAB
+# DETECTION
 # -------------------------------------------------
 with tab1:
 
     mode = st.radio("Select Mode", ["Image", "Video"])
 
-    # ---------------- IMAGE ----------------
     if mode == "Image":
 
         uploaded_image = st.file_uploader(
@@ -101,10 +101,7 @@ with tab1:
             fps = 1 / (end - start)
 
             annotated = results[0].plot()
-            annotated = cv2.cvtColor(
-                annotated,
-                cv2.COLOR_BGR2RGB
-            )
+            annotated = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
 
             col1, col2 = st.columns([2, 1])
 
@@ -114,75 +111,21 @@ with tab1:
             with col2:
                 st.metric("⚡ FPS", f"{fps:.2f}")
                 st.metric("📦 Objects", len(results[0].boxes))
-                st.metric("🎯 Confidence", confidence)
 
-            # Download button
             _, buffer = cv2.imencode(
                 ".jpg",
-                cv2.cvtColor(
-                    annotated,
-                    cv2.COLOR_RGB2BGR
-                )
+                cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
             )
 
             st.download_button(
-                "📥 Download Result",
+                "📥 Download Result Image",
                 buffer.tobytes(),
                 "result.jpg",
                 "image/jpeg"
             )
 
-    # ---------------- VIDEO ----------------
-    if mode == "Video":
-
-        uploaded_video = st.file_uploader(
-            "Upload Video",
-            type=["mp4", "avi", "mov"]
-        )
-
-        if uploaded_video:
-
-            tfile = tempfile.NamedTemporaryFile(delete=False)
-            tfile.write(uploaded_video.read())
-
-            cap = cv2.VideoCapture(tfile.name)
-            stframe = st.empty()
-
-            fps_list = []
-
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                start = time.time()
-
-                results = model.predict(
-                    source=frame,
-                    conf=confidence,
-                    iou=iou,
-                    imgsz=imgsz,
-                    classes=selected_class_ids,
-                    device="cpu"
-                )
-
-                end = time.time()
-                fps = 1 / (end - start)
-                fps_list.append(fps)
-
-                annotated = results[0].plot()
-                annotated = cv2.cvtColor(
-                    annotated,
-                    cv2.COLOR_BGR2RGB
-                )
-
-                stframe.image(annotated)
-
-            cap.release()
-            st.success("Video Processing Completed")
-
 # -------------------------------------------------
-# ANALYTICS TAB
+# ANALYTICS
 # -------------------------------------------------
 with tab2:
 
@@ -203,27 +146,25 @@ with tab2:
             st.subheader("📊 Confidence Distribution")
             fig, ax = plt.subplots()
             ax.hist(conf_scores, bins=10)
-            ax.set_xlabel("Confidence Score")
-            ax.set_ylabel("Frequency")
             st.pyplot(fig)
 
         else:
             st.info("No detections available.")
 
 # -------------------------------------------------
-# VALIDATION TAB
+# VALIDATION
 # -------------------------------------------------
 with tab3:
 
     st.subheader("Model Validation")
 
     dataset_yaml = st.text_input(
-        "Enter dataset YAML path (example: datasets/data.yaml)"
+        "Dataset YAML path (example: datasets/data.yaml)"
     )
 
     if st.button("Run Validation") and dataset_yaml:
 
-        with st.spinner("Validating Model..."):
+        with st.spinner("Validating..."):
 
             metrics = model.val(data=dataset_yaml)
 
@@ -232,20 +173,50 @@ with tab3:
 
             if hasattr(metrics, "confusion_matrix"):
                 cm = metrics.confusion_matrix.matrix
-
                 fig2, ax2 = plt.subplots(figsize=(8, 6))
-                sns.heatmap(
-                    cm,
-                    annot=True,
-                    fmt="d",
-                    cmap="Blues"
-                )
+                sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
                 ax2.set_title("Confusion Matrix")
                 st.pyplot(fig2)
 
+# -------------------------------------------------
+# DOCUMENTATION (README + REPORT)
+# -------------------------------------------------
+with tab4:
+
+    st.subheader("📘 Project README")
+
+    if os.path.exists("README.md"):
+        with open("README.md", "r", encoding="utf-8") as f:
+            readme_content = f.read()
+            st.markdown(readme_content)
+    else:
+        st.warning("README.md not found in repository.")
+
+    st.divider()
+
+    st.subheader("📑 Project Report")
+
+    if os.path.exists("project_report.pdf"):
+        with open("project_report.pdf", "rb") as pdf_file:
+            PDFbyte = pdf_file.read()
+
+        st.download_button(
+            label="📥 Download Project Report",
+            data=PDFbyte,
+            file_name="project_report.pdf",
+            mime="application/pdf"
+        )
+
+        st.success("Report ready for download.")
+    else:
+        st.warning("project_report.pdf not found in repository.")
+
+# -------------------------------------------------
+# FOOTER
+# -------------------------------------------------
 st.markdown("""
 <hr>
 <center>
-Built with ❤️ by Ashish | YOLOv8 Powered
+Built with ❤️ by Ashish | YOLOv8 Powered | Streamlit Cloud Ready
 </center>
 """, unsafe_allow_html=True)
