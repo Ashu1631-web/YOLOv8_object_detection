@@ -9,15 +9,6 @@ import numpy as np
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="YOLOv8 Pro Detection", layout="wide")
 
-# ---------------- DARK UI ----------------
-st.markdown("""
-<style>
-body {background-color: #0E1117; color: white;}
-.stApp {background-color: #0E1117;}
-h1, h2, h3 {color: #FFFFFF;}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("🚀 Real-Time Object Detection using YOLOv8")
 
 # ---------------- SIDEBAR ----------------
@@ -25,33 +16,28 @@ st.sidebar.title("⚙️ Settings")
 
 model_option = st.sidebar.selectbox(
     "Select Model",
-    ["Custom Model (best.pt)", "COCO Model (yolov8n.pt)"]
+    ["COCO Model (yolov8n.pt)", "Custom Model (best.pt)"]
 )
 
-confidence = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.3)
+confidence = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25)
 
 # ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model(option):
-    if option == "Custom Model (best.pt)":
-        return YOLO("best.pt")
-    else:
+    if "COCO" in option:
         return YOLO("yolov8n.pt")
+    else:
+        return YOLO("best.pt")
 
 model = load_model(model_option)
 
 # ---------------- METRICS ----------------
 st.sidebar.subheader("📊 Evaluation Metrics")
 
-metrics_path = "metrics.txt"
-
-if os.path.exists(metrics_path):
-    with open(metrics_path, "r") as f:
-        metrics_data = f.readlines()
-    for line in metrics_data:
-        st.sidebar.write(line.strip())
-else:
-    st.sidebar.warning("metrics.txt not found")
+if os.path.exists("metrics.txt"):
+    with open("metrics.txt") as f:
+        for line in f:
+            st.sidebar.write(line.strip())
 
 # ---------------- CONFUSION MATRIX ----------------
 st.subheader("📈 Confusion Matrix")
@@ -60,52 +46,44 @@ if os.path.exists("confusion_matrix.png"):
     st.image("confusion_matrix.png")
 elif os.path.exists("outputs/confusion_matrix.png"):
     st.image("outputs/confusion_matrix.png")
-else:
-    st.warning("Confusion matrix image not found")
 
-# ---------------- DATASET IMAGE + VIDEO TEST ----------------
+# ---------------- DATASET SECTION ----------------
 st.subheader("📂 Test on Dataset Files")
 
 dataset_path = "datasets"
 
 if os.path.exists(dataset_path):
 
-    supported_files = [
+    files = [
         f for f in os.listdir(dataset_path)
         if f.lower().endswith((".jpg", ".jpeg", ".png", ".mp4"))
     ]
 
-    if supported_files:
+    if files:
 
-        supported_files = sorted(supported_files)
+        files = sorted(files)
 
-        search_term = st.text_input("🔍 Search file name")
+        search = st.text_input("🔍 Search file")
 
-        filtered_files = [
-            f for f in supported_files
-            if search_term.lower() in f.lower()
-        ]
+        filtered = [f for f in files if search.lower() in f.lower()]
 
-        selected_file = st.selectbox(
-            "Select File from Dataset",
-            filtered_files
-        )
+        selected_file = st.selectbox("Select File", filtered)
 
         if selected_file:
 
             file_path = os.path.join(dataset_path, selected_file)
-            file_ext = selected_file.split(".")[-1].lower()
+            ext = selected_file.split(".")[-1].lower()
 
             # -------- IMAGE --------
-            if file_ext in ["jpg", "jpeg", "png"]:
+            if ext in ["jpg", "jpeg", "png"]:
 
                 img = cv2.imread(file_path)
 
-                start_time = time.time()
-                results = model(img, conf=confidence)
-                end_time = time.time()
+                start = time.time()
+                results = model.predict(img, conf=confidence)
+                end = time.time()
 
-                fps = 1 / (end_time - start_time)
+                fps = 1 / (end - start)
 
                 annotated = results[0].plot()
 
@@ -113,35 +91,40 @@ if os.path.exists(dataset_path):
                 st.success(f"FPS: {fps:.2f}")
 
             # -------- VIDEO --------
-            elif file_ext == "mp4":
+            elif ext == "mp4":
 
                 cap = cv2.VideoCapture(file_path)
                 stframe = st.empty()
+
+                frame_skip = 2
+                frame_count = 0
 
                 while cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
                         break
 
-                    start_time = time.time()
-                    results = model(frame, conf=confidence)
-                    end_time = time.time()
+                    frame_count += 1
+                    if frame_count % frame_skip != 0:
+                        continue
 
-                    fps = 1 / (end_time - start_time)
+                    # Resize for better performance
+                    frame = cv2.resize(frame, (640, 480))
+
+                    start = time.time()
+                    results = model.predict(frame, conf=confidence)
+                    end = time.time()
+
+                    fps = 1 / (end - start)
 
                     annotated = results[0].plot()
 
                     stframe.image(annotated, channels="BGR")
+                    st.caption(f"FPS: {fps:.2f}")
 
                 cap.release()
 
-    else:
-        st.warning("No supported files found in datasets folder.")
-
-else:
-    st.warning("datasets folder not found.")
-
-# ---------------- FILE UPLOAD ----------------
+# ---------------- UPLOAD SECTION ----------------
 st.subheader("📤 Upload Image or Video")
 
 uploaded_file = st.file_uploader(
@@ -149,21 +132,21 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png", "mp4"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
 
-    file_ext = uploaded_file.name.split(".")[-1].lower()
+    ext = uploaded_file.name.split(".")[-1].lower()
 
     # -------- IMAGE --------
-    if file_ext in ["jpg", "jpeg", "png"]:
+    if ext in ["jpg", "jpeg", "png"]:
 
         image = Image.open(uploaded_file)
         img_array = np.array(image)
 
-        start_time = time.time()
-        results = model(img_array, conf=confidence)
-        end_time = time.time()
+        start = time.time()
+        results = model.predict(img_array, conf=confidence)
+        end = time.time()
 
-        fps = 1 / (end_time - start_time)
+        fps = 1 / (end - start)
 
         annotated = results[0].plot()
 
@@ -171,29 +154,39 @@ if uploaded_file is not None:
         st.success(f"FPS: {fps:.2f}")
 
     # -------- VIDEO --------
-    elif file_ext == "mp4":
+    elif ext == "mp4":
 
-        temp_video = "temp.mp4"
+        temp_path = "temp_video.mp4"
 
-        with open(temp_video, "wb") as f:
+        with open(temp_path, "wb") as f:
             f.write(uploaded_file.read())
 
-        cap = cv2.VideoCapture(temp_video)
+        cap = cv2.VideoCapture(temp_path)
         stframe = st.empty()
+
+        frame_skip = 2
+        frame_count = 0
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
-            start_time = time.time()
-            results = model(frame, conf=confidence)
-            end_time = time.time()
+            frame_count += 1
+            if frame_count % frame_skip != 0:
+                continue
 
-            fps = 1 / (end_time - start_time)
+            frame = cv2.resize(frame, (640, 480))
+
+            start = time.time()
+            results = model.predict(frame, conf=confidence)
+            end = time.time()
+
+            fps = 1 / (end - start)
 
             annotated = results[0].plot()
 
             stframe.image(annotated, channels="BGR")
+            st.caption(f"FPS: {fps:.2f}")
 
         cap.release()
