@@ -11,22 +11,13 @@ from collections import Counter
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import av
 
-# Optional Cloudinary (uses st.secrets if configured)
-try:
-    import cloudinary
-    import cloudinary.uploader
-    CLOUD_ENABLED = True
-except:
-    CLOUD_ENABLED = False
+st.set_page_config(page_title="AI Vision Dashboard", layout="wide")
 
-st.set_page_config(page_title="AI Vision Pro Dashboard", layout="wide")
-
-# -------------------- DARK THEME POLISH --------------------
+# -------------------- DARK CSS POLISH --------------------
 st.markdown("""
 <style>
 .block-container {padding-top: 1rem;}
 .stMetric {background-color: #1C1F26; padding: 15px; border-radius: 10px;}
-h1, h2, h3 {color: #00FFAA;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,11 +29,12 @@ def load_model(path):
 # -------------------- SIDEBAR --------------------
 st.sidebar.title("⚙ Control Panel")
 
-mode = st.sidebar.radio("Mode", ["Image", "Video", "Webcam"])
+task = st.sidebar.radio("Mode", ["Image", "Video", "Webcam"])
+
 confidence = st.sidebar.slider("Confidence", 0.1, 1.0, 0.5)
 iou = st.sidebar.slider("IOU", 0.1, 1.0, 0.45)
 
-# Auto-detect local models
+# Auto detect all .pt models
 model_files = [f for f in os.listdir() if f.endswith(".pt")]
 
 custom_model = st.sidebar.file_uploader("Upload Custom Model (.pt)", type=["pt"])
@@ -64,10 +56,146 @@ selected_classes = st.sidebar.multiselect(
     "Filter Classes", class_names, default=class_names
 )
 
-# -------------------- CLOUD CONFIG --------------------
-def upload_to_cloud(file_path):
-    if not CLOUD_ENABLED:
-        return None
+# -------------------- TABS --------------------
+tab1, tab2 = st.tabs(["🚀 Detection", "📊 Evaluation"])
+
+# ================= DETECTION TAB =================
+with tab1:
+    st.title("🚀 Advanced YOLOv8 Object Detection")
+
+    # -------- IMAGE MODE --------
+    if task == "Image":
+        uploaded_file = st.file_uploader("Upload Image", type=["jpg","jpeg","png"])
+
+        if uploaded_file:
+            image = Image.open(uploaded_file)
+            img_array = np.array(image)
+
+            col1, col2 = st.columns(2)
+            col1.image(image, caption="Original", use_column_width=True)
+
+            with st.spinner("Detecting..."):
+                results = model(img_array, conf=confidence, iou=iou)
+
+            filtered_boxes = [
+                box for box in results[0].boxes
+                if model.names[int(box.cls)] in selected_classes
+            ]
+
+            results[0].boxes = filtered_boxes
+            result_img = results[0].plot()
+
+            col2.image(result_img, caption="Detected", use_column_width=True)
+
+            # ---- ANALYTICS ----
+            counts = Counter(model.names[int(b.cls)] for b in filtered_boxes)
+            conf_list = [float(b.conf) for b in filtered_boxes]
+
+            st.divider()
+            m1, m2 = st.columns(2)
+            m1.metric("Total Objects", sum(counts.values()))
+            if conf_list:
+                m2.metric("Avg Confidence", round(np.mean(conf_list), 2))
+
+            st.subheader("Class Counts")
+            st.table(counts)
+
+            # Histogram
+            if conf_list:
+                fig, ax = plt.subplots()
+                ax.hist(conf_list, bins=10)
+                ax.set_title("Confidence Distribution")
+                st.pyplot(fig)
+
+            # Bar Graph
+            if counts:
+                fig2, ax2 = plt.subplots()
+                ax2.bar(counts.keys(), counts.values())
+                plt.xticks(rotation=45)
+                ax2.set_title("Per-Class Count")
+                st.pyplot(fig2)
+
+            # Save + Download
+            cv2.imwrite("detected.jpg", cv2.cvtColor(result_img, cv2.COLOR_RGB2BGR))
+            with open("detected.jpg","rb") as f:
+                st.download_button("⬇ Download Result", f, "detected.jpg")
+
+    # -------- VIDEO MODE --------
+    elif task == "Video":
+        uploaded_video = st.file_uploader("Upload Video", type=["mp4"])
+
+        if uploaded_video:
+            temp_video = tempfile.NamedTemporaryFile(delete=False)
+            temp_video.write(uploaded_video.read())
+
+            cap = cv2.VideoCapture(temp_video.name)
+
+            width = int(cap.get(3))
+            height = int(cap.get(4))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+
+            out = cv2.VideoWriter("output.mp4",
+                                  cv2.VideoWriter_fourcc(*'mp4v'),
+                                  fps, (width,height))
+
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            progress = st.progress(0)
+            frame_count = 0
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                results = model(frame, conf=confidence, iou=iou)
+                out.write(results[0].plot())
+
+                frame_count += 1
+                progress.progress(frame_count/total)
+
+            cap.release()
+            out.release()
+
+            # Compress
+            subprocess.run([
+                "ffmpeg","-i","output.mp4",
+                "-vcodec","libx264","-crf","28",
+                "-preset","fast","-movflags","+faststart",
+                "compressed.mp4"
+            ])
+
+            st.success("Video Processed")
+            st.video("compressed.mp4")
+
+            with open("compressed.mp4","rb") as f:
+                st.download_button("⬇ Download Video", f, "detected_video.mp4")
+
+    # -------- WEBCAM MODE --------
+    elif task == "Webcam":
+
+        class VideoProcessor(VideoTransformerBase):
+            def transform(self, frame):
+                img = frame.to_ndarray(format="bgr24")
+                results = model(img, conf=confidence, iou=iou)
+                img = results[0].plot()
+                return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+        st.subheader("📷 Live Webcam Detection")
+        webrtc_streamer(
+            key="webcam",
+            video_processor_factory=VideoProcessor
+        )
+
+# ================= EVALUATION TAB =================
+with tab2:
+    st.title("📊 Model Evaluation")
+
+    st.metric("mAP50", 0.57)
+    st.metric("mAP50-95", 0.40)
+    st.metric("Precision", 0.66)
+    st.metric("Recall", 0.53)
+
+    st.info("Replace with real evaluation results if available.")        return None
     try:
         cloudinary.config(
             cloud_name=st.secrets["cloud_name"],
