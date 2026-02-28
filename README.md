@@ -1,45 +1,58 @@
-# 🚀 Real-Time Object Detection using YOLOv8
+# 🚀 Real-Time Object Detection using YOLOv8 (Images & Videos)
 
 ## 📌 Project Overview
-This project implements an end-to-end Object Detection system using YOLOv8.
-The system can train, evaluate, and perform inference on images and videos.
+This project implements an end-to-end Object Detection system using Ultralytics YOLOv8.  
+The system supports:
+
+- Custom model training on a labeled dataset
+- Performance evaluation using mAP, Precision, Recall
+- Inference on images, videos, and webcam
+- Streamlit-based web deployment
 
 ---
 
-## 🎯 Problem Statement
-Build a custom object detector that:
-- Trains on a labeled dataset
-- Evaluates using standard detection metrics
-- Performs inference on new images and videos
-- Generates annotated outputs
+## 🧠 Skills Demonstrated
+
+- Computer Vision fundamentals (IoU, Confidence, NMS)
+- YOLOv8 training & inference (train / val / predict)
+- Dataset preparation in YOLO format
+- Model evaluation and error analysis
+- Real-time detection on image & video
+- Streamlit deployment
 
 ---
 
-## 🗂 Dataset
+## 📂 Dataset
+
+Custom Vehicle Detection Dataset (YOLO format)
+
+Structure:
+
+data/
+├── images/
+│   ├── train/
+│   └── val/
+├── labels/
+│   ├── train/
+│   └── val/
+└── data.yaml
+
 Classes:
 - Ambulance
 - Bus
 - Car
 - Motorcycle
 - Truck
-- Person
-
-Dataset prepared in YOLO format:
-
-images/train
-images/val
-labels/train
-labels/val
-data.yaml
-
 
 ---
 
-## 🧠 Model Details
-- Model: YOLOv8n
-- Epochs: 100
-- Image Size: 800
-- Batch Size: 16
+## ⚙️ Training Details
+
+Model: yolov8n.pt  
+Epochs: 100  
+Image Size: 640 / 800  
+Batch Size: 16  
+Device: GPU (Google Colab)
 
 ---
 
@@ -54,27 +67,62 @@ data.yaml
 
 ---
 
-## 📈 Observations
-- Strong performance on Car detection.
-- Moderate detection for Bus and Ambulance.
-- Person detection can be improved.
-- Some confusion between vehicle classes.
+## 📈 Confusion Matrix
+
+![Confusion Matrix](confusion_matrix.png)
 
 ---
 
 ## 🎥 Inference Capabilities
-- Image detection
-- Video detection
-- Annotated output saving
-- Streamlit-based demo interface
+
+- Dataset image testing
+- Dataset video testing
+- Upload image
+- Upload video
+- FPS counter
+- Model selection (COCO + Custom)
 
 ---
 
-## 🛠 How to Run Locally
+## 🌐 Deployment
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
+Streamlit Cloud App  
+Model options:
+- Pretrained COCO model (yolov8n.pt)
+- Custom trained model (best.pt)
 
-Author
-Ashish Mehara
+---
+
+## 📦 Project Structure
+
+YOLOv8_object_detection/
+│
+├── app.py
+├── best.pt
+├── yolov8n.pt
+├── metrics.txt
+├── confusion_matrix.png
+├── requirements.txt
+└── datasets/
+
+---
+
+## 🏁 Conclusion
+
+The custom-trained YOLOv8 model achieved moderate detection performance.  
+While vehicle detection works well for larger objects, improvements can be made for small object detection by increasing dataset size and applying stronger augmentation techniques.
+
+---
+
+## 🔮 Future Improvements
+
+- Increase dataset size (1000+ images)
+- Add Person class for traffic scenes
+- Implement object counting
+- Export model to ONNX
+- Add analytics dashboard
+
+Author : Ashish Mehara (Ashu)
+## 🛠 Tech Stack
+
+YOLOv8, PyTorch, OpenCV, Streamlit, Python, Ultralytics
