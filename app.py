@@ -63,32 +63,63 @@ elif os.path.exists("outputs/confusion_matrix.png"):
 else:
     st.warning("Confusion matrix image not found")
 
-# ---------------- DATASET IMAGE TEST ----------------
-st.subheader("📂 Test on Dataset Images")
+# ---------------- DATASET IMAGE + VIDEO TEST ----------------
+st.subheader("📂 Test on Dataset Files")
 
 dataset_path = "datasets"
 
 if os.path.exists(dataset_path):
-    image_files = [f for f in os.listdir(dataset_path) if f.endswith((".jpg", ".jpeg", ".png"))]
 
-    if image_files:
-        selected_image = st.selectbox("Select Image", image_files)
+    supported_files = [
+        f for f in os.listdir(dataset_path)
+        if f.lower().endswith((".jpg", ".jpeg", ".png", ".mp4"))
+    ]
 
-        if selected_image:
-            img_path = os.path.join(dataset_path, selected_image)
-            img = cv2.imread(img_path)
+    if supported_files:
+        selected_file = st.selectbox("Select File from Dataset", supported_files)
 
-            start_time = time.time()
-            results = model(img, conf=confidence)
-            end_time = time.time()
+        if selected_file:
+            file_path = os.path.join(dataset_path, selected_file)
+            file_ext = selected_file.split(".")[-1].lower()
 
-            fps = 1 / (end_time - start_time)
-            annotated = results[0].plot()
+            # -------- IMAGE --------
+            if file_ext in ["jpg", "jpeg", "png"]:
+                img = cv2.imread(file_path)
 
-            st.image(annotated, channels="BGR")
-            st.success(f"FPS: {fps:.2f}")
+                start_time = time.time()
+                results = model(img, conf=confidence)
+                end_time = time.time()
+
+                fps = 1 / (end_time - start_time)
+                annotated = results[0].plot()
+
+                st.image(annotated, channels="BGR")
+                st.success(f"FPS: {fps:.2f}")
+
+            # -------- VIDEO --------
+            elif file_ext == "mp4":
+                cap = cv2.VideoCapture(file_path)
+                stframe = st.empty()
+
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+
+                    start_time = time.time()
+                    results = model(frame, conf=confidence)
+                    end_time = time.time()
+
+                    fps = 1 / (end_time - start_time)
+                    annotated = results[0].plot()
+
+                    stframe.image(annotated, channels="BGR")
+
+                cap.release()
+
     else:
-        st.warning("No images found inside datasets folder.")
+        st.warning("No supported files found in datasets folder.")
+
 else:
     st.warning("datasets folder not found.")
 
@@ -101,8 +132,9 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    file_ext = uploaded_file.name.split(".")[-1]
+    file_ext = uploaded_file.name.split(".")[-1].lower()
 
+    # -------- IMAGE --------
     if file_ext in ["jpg", "jpeg", "png"]:
         image = Image.open(uploaded_file)
         img_array = np.array(image)
@@ -117,6 +149,7 @@ if uploaded_file is not None:
         st.image(annotated, channels="BGR")
         st.success(f"FPS: {fps:.2f}")
 
+    # -------- VIDEO --------
     elif file_ext == "mp4":
         temp_video = "temp.mp4"
         with open(temp_video, "wb") as f:
