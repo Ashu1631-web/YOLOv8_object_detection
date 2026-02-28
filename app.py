@@ -1,74 +1,131 @@
 import streamlit as st
-from ultralytics import YOLO
-import tempfile
 import os
-import torch
 import cv2
+import time
+from ultralytics import YOLO
 from PIL import Image
 import numpy as np
 
-device = "cpu"
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="YOLOv8 Pro Detection", layout="wide")
 
-st.set_page_config(page_title="YOLOv8 Object Detection", layout="wide")
-st.title("🚀 YOLOv8 Object Detection System")
+# ---------------- DARK THEME CSS ----------------
+st.markdown("""
+<style>
+body {background-color: #0E1117; color: white;}
+.stApp {background-color: #0E1117;}
+</style>
+""", unsafe_allow_html=True)
 
-model_option = st.selectbox(
+st.title("🚀 Real-Time Object Detection using YOLOv8")
+
+# ---------------- MODEL SELECTION ----------------
+model_option = st.sidebar.selectbox(
     "Select Model",
-    ["COCO Model (yolov8n.pt)", "Custom Model (best.pt)"]
+    ["Custom Model (best.pt)", "COCO Model (yolov8n.pt)"]
 )
 
-@st.cache_resource
-def load_model(path):
-    model = YOLO(path)
-    model.to(device)
-    return model
-
-if model_option == "COCO Model (yolov8n.pt)":
-    model = load_model("yolov8n.pt")
+if model_option == "Custom Model (best.pt)":
+    model = YOLO("best.pt")
 else:
-    model = load_model("best.pt")
+    model = YOLO("yolov8n.pt")
 
-confidence = st.slider("Confidence Threshold", 0.0, 1.0, 0.3)
+confidence = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.3)
+
+# ---------------- METRICS LOAD ----------------
+st.sidebar.subheader("📊 Evaluation Metrics")
+
+metrics_path = "metrics.txt"
+
+if os.path.exists(metrics_path):
+    with open(metrics_path, "r") as f:
+        metrics_data = f.readlines()
+
+    for line in metrics_data:
+        st.sidebar.write(line.strip())
+else:
+    st.sidebar.warning("Metrics file not found")
+
+# ---------------- CONFUSION MATRIX ----------------
+st.subheader("📈 Confusion Matrix")
+
+if os.path.exists("outputs/confusion_matrix.png"):
+    st.image("outputs/confusion_matrix.png")
+else:
+    st.warning("Confusion matrix image not found")
+
+# ---------------- DATASET IMAGE SELECT ----------------
+st.subheader("📂 Test on Dataset Images")
+
+dataset_path = "dataset/images"
+
+if os.path.exists(dataset_path):
+    image_files = os.listdir(dataset_path)
+    selected_image = st.selectbox("Select Image", image_files)
+
+    if selected_image:
+        img_path = os.path.join(dataset_path, selected_image)
+        img = cv2.imread(img_path)
+
+        start_time = time.time()
+        results = model(img, conf=confidence)
+        end_time = time.time()
+
+        fps = 1 / (end_time - start_time)
+
+        annotated = results[0].plot()
+
+        st.image(annotated, channels="BGR")
+        st.success(f"FPS: {fps:.2f}")
+else:
+    st.warning("Dataset folder not found.")
+
+# ---------------- FILE UPLOAD ----------------
+st.subheader("📤 Upload Image or Video")
 
 uploaded_file = st.file_uploader(
     "Upload Image or Video",
-    type=["jpg", "jpeg", "png", "mp4", "avi"]
+    type=["jpg", "jpeg", "png", "mp4"]
 )
 
 if uploaded_file is not None:
+    file_ext = uploaded_file.name.split(".")[-1]
 
-    file_ext = uploaded_file.name.split(".")[-1].lower()
+    if file_ext in ["jpg", "jpeg", "png"]:
+        image = Image.open(uploaded_file)
+        img_array = np.array(image)
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp_file:
-        tmp_file.write(uploaded_file.getbuffer())
-        tmp_path = tmp_file.name
+        start_time = time.time()
+        results = model(img_array, conf=confidence)
+        end_time = time.time()
 
-    try:
-        if file_ext in ["jpg", "jpeg", "png"]:
-            # IMAGE DETECTION
-            results = model(tmp_path, conf=confidence)
+        fps = 1 / (end_time - start_time)
+
+        annotated = results[0].plot()
+
+        st.image(annotated, channels="BGR")
+        st.success(f"FPS: {fps:.2f}")
+
+    elif file_ext == "mp4":
+        temp_video = "temp.mp4"
+        with open(temp_video, "wb") as f:
+            f.write(uploaded_file.read())
+
+        cap = cv2.VideoCapture(temp_video)
+        stframe = st.empty()
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            start_time = time.time()
+            results = model(frame, conf=confidence)
+            end_time = time.time()
+
+            fps = 1 / (end_time - start_time)
+
             annotated = results[0].plot()
-            annotated = Image.fromarray(annotated[..., ::-1])
-            st.image(annotated, caption="Detection Result", use_column_width=True)
+            stframe.image(annotated, channels="BGR")
 
-        elif file_ext == "mp4":
-            # VIDEO DETECTION
-            cap = cv2.VideoCapture(tmp_path)
-            stframe = st.empty()
-
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                results = model(frame, conf=confidence)
-                annotated = results[0].plot()
-                stframe.image(annotated, channels="BGR")
-
-            cap.release()
-
-    except Exception as e:
-        st.error(f"Error: {e}")
-
-    finally:
-        os.remove(tmp_path)
+        cap.release()
