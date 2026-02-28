@@ -1,226 +1,168 @@
 import streamlit as st
-import os
-import cv2
-import time
 from ultralytics import YOLO
 from PIL import Image
 import numpy as np
+import cv2
+import tempfile
+import os
+import subprocess
+from collections import Counter
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="YOLOv8 Pro Detection", layout="wide")
-st.title("🚀 Real-Time Object Detection using YOLOv8")
+st.set_page_config(page_title="Advanced YOLOv8 Dashboard", layout="wide")
 
-# ---------------- SIDEBAR ----------------
-st.sidebar.title("⚙️ Settings")
+# -------------------- MODEL CACHE --------------------
+@st.cache_resource
+def load_model(path):
+    return YOLO(path)
 
-model_option = st.sidebar.selectbox(
-    "Select Model",
-    ["COCO Model (yolov8n.pt)", "Custom Model (best.pt)"]
+# -------------------- SIDEBAR --------------------
+st.sidebar.title("⚙ Control Panel")
+
+task = st.sidebar.radio("Select Mode", ["Image", "Video"])
+model_choice = st.sidebar.selectbox("Select Model", ["yolov8n.pt"])
+confidence = st.sidebar.slider("Confidence Threshold", 0.1, 1.0, 0.5)
+iou = st.sidebar.slider("IOU Threshold", 0.1, 1.0, 0.45)
+
+model = load_model(model_choice)
+
+# Class Filter
+class_names = list(model.names.values())
+selected_classes = st.sidebar.multiselect(
+    "Filter Classes (Optional)", class_names, default=class_names
 )
 
-# ---------------- LOAD MODEL ----------------
-@st.cache_resource
-def load_model(option):
-    if "COCO" in option:
-        return YOLO("yolov8n.pt")
-    else:
-        return YOLO("best.pt")
+# -------------------- TABS --------------------
+tab1, tab2 = st.tabs(["🚀 Detection", "📊 Model Evaluation"])
 
-model = load_model(model_option)
+# ================== DETECTION TAB ==================
+with tab1:
+    st.title("🚀 Real-Time Object Detection using YOLOv8")
 
-# ---------------- BRIGHTNESS FUNCTION ----------------
-def calculate_brightness(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return gray.mean()
+    # ---------------- IMAGE MODE ----------------
+    if task == "Image":
+        uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
-def auto_confidence(brightness):
-    if brightness < 50:
-        return 0.05
-    elif brightness < 100:
-        return 0.10
-    else:
-        return 0.25
+        if uploaded_file:
+            image = Image.open(uploaded_file)
+            img_array = np.array(image)
 
-# ---------------- METRICS ----------------
-st.sidebar.subheader("📊 Evaluation Metrics")
+            col1, col2 = st.columns(2)
 
-if os.path.exists("metrics.txt"):
-    with open("metrics.txt") as f:
-        for line in f:
-            st.sidebar.write(line.strip())
+            with col1:
+                st.image(image, caption="Original Image", use_column_width=True)
 
-# ---------------- CONFUSION MATRIX ----------------
-st.subheader("📈 Confusion Matrix")
+            with st.spinner("Detecting objects..."):
+                results = model(img_array, conf=confidence, iou=iou)
 
-if os.path.exists("confusion_matrix.png"):
-    st.image("confusion_matrix.png")
+            # Filter classes
+            filtered_boxes = []
+            for box in results[0].boxes:
+                cls = model.names[int(box.cls)]
+                if cls in selected_classes:
+                    filtered_boxes.append(box)
 
-# ---------------- DATASET SECTION ----------------
-st.subheader("📂 Test on Dataset Files")
+            results[0].boxes = filtered_boxes
+            result_img = results[0].plot()
 
-dataset_path = "datasets"
+            with col2:
+                st.image(result_img, caption="Detected Image", use_column_width=True)
 
-if os.path.exists(dataset_path):
+            # ---------------- ANALYTICS ----------------
+            counts = Counter(
+                model.names[int(box.cls)] for box in filtered_boxes
+            )
 
-    files = [
-        f for f in os.listdir(dataset_path)
-        if f.lower().endswith((".jpg", ".jpeg", ".png", ".mp4", ".avi"))
-    ]
+            st.divider()
+            colA, colB = st.columns(2)
 
-    if files:
-        files = sorted(files)
-        search = st.text_input("🔍 Search file")
-        filtered = [f for f in files if search.lower() in f.lower()]
-        selected_file = st.selectbox("Select File", filtered)
+            colA.metric("Total Objects", sum(counts.values()))
+            if counts:
+                avg_conf = np.mean([float(box.conf) for box in filtered_boxes])
+                colB.metric("Avg Confidence", round(avg_conf, 2))
 
-        if selected_file:
-            file_path = os.path.join(dataset_path, selected_file)
-            ext = selected_file.split(".")[-1].lower()
+            st.subheader("Class-wise Count")
+            st.table(counts)
 
-            # -------- IMAGE --------
-            if ext in ["jpg", "jpeg", "png"]:
-                img = cv2.imread(file_path)
+            # Save result for download
+            output_path = "detected_image.jpg"
+            cv2.imwrite(output_path, cv2.cvtColor(result_img, cv2.COLOR_RGB2BGR))
 
-                brightness = calculate_brightness(img)
-                conf = auto_confidence(brightness)
+            with open(output_path, "rb") as file:
+                st.download_button(
+                    "⬇ Download Result",
+                    file,
+                    file_name="detected_image.jpg"
+                )
 
-                if brightness < 80:
-                    img = cv2.convertScaleAbs(img, alpha=1.4, beta=30)
+    # ---------------- VIDEO MODE ----------------
+    elif task == "Video":
+        uploaded_video = st.file_uploader("Upload Video", type=["mp4"])
 
-                start = time.time()
-                results = model.predict(img, conf=conf)
-                end = time.time()
+        if uploaded_video:
+            temp_video = tempfile.NamedTemporaryFile(delete=False)
+            temp_video.write(uploaded_video.read())
 
-                fps = 1 / (end - start)
-                annotated = results[0].plot()
+            cap = cv2.VideoCapture(temp_video.name)
 
-                st.image(annotated, channels="BGR")
-                st.success(f"FPS: {fps:.2f}")
-                st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
 
-            # -------- VIDEO --------
-            elif ext in ["mp4", "avi"]:
-                cap = cv2.VideoCapture(file_path)
-                stframe = st.empty()
-                frame_skip = 2
-                frame_count = 0
+            output_path = "output_video.mp4"
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            progress = st.progress(0)
+
+            frame_count = 0
+
+            with st.spinner("Processing video..."):
                 while cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
                         break
 
+                    results = model(frame, conf=confidence, iou=iou)
+                    result_frame = results[0].plot()
+                    out.write(result_frame)
+
                     frame_count += 1
-                    if frame_count % frame_skip != 0:
-                        continue
+                    progress.progress(frame_count / total_frames)
 
-                    frame = cv2.resize(frame, (640, 480))
+            cap.release()
+            out.release()
 
-                    brightness = calculate_brightness(frame)
-                    conf = auto_confidence(brightness)
+            st.success("Video Processing Complete")
 
-                    if brightness < 80:
-                        frame = cv2.convertScaleAbs(frame, alpha=1.4, beta=30)
+            # Optional compression using FFmpeg
+            compressed_output = "compressed_output.mp4"
+            subprocess.run([
+                "ffmpeg",
+                "-i", output_path,
+                "-vcodec", "libx264",
+                "-crf", "28",
+                "-preset", "fast",
+                "-movflags", "+faststart",
+                compressed_output
+            ])
 
-                    start = time.time()
-                    results = model.predict(frame, conf=conf)
-                    end = time.time()
+            st.video(compressed_output)
 
-                    fps = 1 / (end - start)
-                    annotated = results[0].plot()
+            with open(compressed_output, "rb") as file:
+                st.download_button(
+                    "⬇ Download Processed Video",
+                    file,
+                    file_name="detected_video.mp4"
+                )
 
-                    stframe.image(annotated, channels="BGR")
-                    st.caption(f"FPS: {fps:.2f}")
+# ================== EVALUATION TAB ==================
+with tab2:
+    st.title("📊 Model Evaluation")
 
-                cap.release()
+    st.info("Add your confusion matrix and metrics visualization here.")
 
-# ---------------- UPLOAD SECTION ----------------
-st.subheader("📤 Upload Image or Video")
-
-uploaded_file = st.file_uploader(
-    "Upload Image or Video",
-    type=["jpg", "jpeg", "png", "mp4", "avi"]
-)
-
-if uploaded_file:
-    ext = uploaded_file.name.split(".")[-1].lower()
-
-    if ext in ["jpg", "jpeg", "png"]:
-        image = Image.open(uploaded_file)
-        img_array = np.array(image)
-
-        brightness = calculate_brightness(img_array)
-        conf = auto_confidence(brightness)
-
-        if brightness < 80:
-            img_array = cv2.convertScaleAbs(img_array, alpha=1.4, beta=30)
-
-        start = time.time()
-        results = model.predict(img_array, conf=conf)
-        end = time.time()
-
-        fps = 1 / (end - start)
-        annotated = results[0].plot()
-
-        st.image(annotated, channels="BGR")
-        st.success(f"FPS: {fps:.2f}")
-        st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
-
-    elif ext in ["mp4", "avi"]:
-        temp_path = "temp_video.mp4"
-
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.read())
-
-        cap = cv2.VideoCapture(temp_path)
-        stframe = st.empty()
-        frame_skip = 2
-        frame_count = 0
-
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            frame_count += 1
-            if frame_count % frame_skip != 0:
-                continue
-
-            frame = cv2.resize(frame, (640, 480))
-
-            brightness = calculate_brightness(frame)
-            conf = auto_confidence(brightness)
-
-            if brightness < 80:
-                frame = cv2.convertScaleAbs(frame, alpha=1.4, beta=30)
-
-            start = time.time()
-            results = model.predict(frame, conf=conf)
-            end = time.time()
-
-            fps = 1 / (end - start)
-            annotated = results[0].plot()
-
-            stframe.image(annotated, channels="BGR")
-            st.caption(f"FPS: {fps:.2f}")
-
-        cap.release()
-
-# ---------------- PROJECT REPORT ----------------
-st.subheader("📄 Project Report")
-
-with st.expander("Click to View Full Report"):
-    st.markdown("""
-    ### 🎯 Problem Statement
-    End-to-end YOLOv8 Object Detection system for training, evaluation and deployment.
-
-    ### 📊 Performance
-    - mAP@0.5: 0.57
-    - mAP@0.5:0.95: 0.40
-    - Precision: 0.66
-    - Recall: 0.53
-
-    ### 🚀 Conclusion
-    The model demonstrates reliable vehicle detection and real-time deployment
-    with adaptive confidence handling for low-light scenarios.
-    """)
+    st.metric("mAP50", 0.57)
+    st.metric("mAP50-95", 0.40)
+    st.metric("Precision", 0.66)
+    st.metric("Recall", 0.53)
