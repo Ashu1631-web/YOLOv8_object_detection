@@ -185,7 +185,31 @@ if uploaded_file:
             fps = 1 / (end - start)
 
             annotated = results[0].plot()
+# ---------------- PROJECT REPORT ----------------
+st.subheader("📄 Project Report")
 
+with st.expander("Click to View Full Project Report"):
+
+    st.markdown("""
+    ### 🎯 Problem Statement
+    This project builds an end-to-end Object Detection system using YOLOv8 
+    capable of training, evaluation, and real-time inference on images and videos.
+
+    ### 📊 Model Performance
+    - mAP@0.5: 0.57
+    - mAP@0.5:0.95: 0.40
+    - Precision: 0.66
+    - Recall: 0.53
+
+    ### 🧠 Observations
+    - Large vehicles detected accurately.
+    - Smaller or distant objects show lower recall.
+    - Performance improves with larger dataset.
+
+    ### 🚀 Conclusion
+    The system successfully demonstrates dataset preparation, model training,
+    evaluation, and deployment using Streamlit.
+    """)
             stframe.image(annotated, channels="BGR")
             st.caption(f"FPS: {fps:.2f}")
 
