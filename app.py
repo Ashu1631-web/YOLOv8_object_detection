@@ -162,7 +162,8 @@ if uploaded_file:
         fps = 1 / (end - start)
         annotated = results[0].plot()
 
-        st.image(annotated, channels="BGR")
+        annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+        st.image(annotated_rgb)
         st.success(f"FPS: {fps:.2f}")
         st.info(f"Auto Confidence: {conf} | Brightness: {brightness:.1f}")
 
