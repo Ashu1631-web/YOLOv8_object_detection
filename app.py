@@ -4,100 +4,189 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+import tempfile
 from ultralytics import YOLO
 
-# --------------------------------------------------
-# Page Config
-# --------------------------------------------------
-st.set_page_config(page_title="YOLOv8 Object Detection", layout="wide")
+# -------------------------------------------------
+# PAGE CONFIG + BRANDING
+# -------------------------------------------------
+st.set_page_config(page_title="Ashish AI Vision", layout="wide")
 
-st.title("🚀 YOLOv8 Advanced Detection Dashboard")
+st.markdown("""
+<h1 style='text-align: center; color: #1F77B4;'>
+🚀 Ashish AI Vision - YOLOv8 Detection Suite
+</h1>
+<hr>
+""", unsafe_allow_html=True)
 
-# --------------------------------------------------
-# Load Model (Cached - Performance Boost)
-# --------------------------------------------------
+# -------------------------------------------------
+# MODEL LOADING (CACHED FOR PERFORMANCE)
+# -------------------------------------------------
 @st.cache_resource
-def load_model(path):
-    return YOLO(path)
+def load_model(model_path):
+    return YOLO(model_path)
 
-# --------------------------------------------------
-# Sidebar Controls
-# --------------------------------------------------
+# -------------------------------------------------
+# SIDEBAR SETTINGS
+# -------------------------------------------------
 st.sidebar.header("⚙ Detection Settings")
 
 model_option = st.sidebar.selectbox(
     "Select Model",
-    ["yolov8n.pt", "yolov8s.pt", "best.pt"]
+    ["yolov8s.pt", "yolov8n.pt", "best.pt"]
 )
 
-confidence = st.sidebar.slider("Confidence Threshold", 0.1, 1.0, 0.25)
+confidence = st.sidebar.slider("Confidence", 0.1, 1.0, 0.30)
 iou = st.sidebar.slider("IoU Threshold", 0.1, 1.0, 0.45)
-imgsz = st.sidebar.selectbox("Image Size", [320, 480, 640])
+imgsz = st.sidebar.selectbox("Image Size", [320, 480, 640], index=2)
 
 model = load_model(model_option)
 
-# --------------------------------------------------
-# Tabs Layout
-# --------------------------------------------------
-tab1, tab2 = st.tabs(["🔍 Detection", "📊 Advanced Analytics"])
+# Class Filtering
+class_filter = st.sidebar.multiselect(
+    "Filter Classes (Optional)",
+    list(model.names.values())
+)
 
-# --------------------------------------------------
-# Detection Tab
-# --------------------------------------------------
+selected_class_ids = None
+if class_filter:
+    selected_class_ids = [
+        k for k, v in model.names.items()
+        if v in class_filter
+    ]
+
+# -------------------------------------------------
+# TABS
+# -------------------------------------------------
+tab1, tab2, tab3 = st.tabs(
+    ["🔍 Detection", "📊 Analytics", "🧪 Validation"]
+)
+
+# -------------------------------------------------
+# DETECTION TAB
+# -------------------------------------------------
 with tab1:
 
-    uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+    mode = st.radio("Select Mode", ["Image", "Video"])
 
-    if uploaded_file:
+    # ---------------- IMAGE ----------------
+    if mode == "Image":
 
-        # Read image
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, 1)
-
-        # Start timer
-        start_time = time.time()
-
-        results = model.predict(
-            source=image,
-            conf=confidence,
-            iou=iou,
-            imgsz=imgsz,
-            device="cpu"
+        uploaded_image = st.file_uploader(
+            "Upload Image",
+            type=["jpg", "jpeg", "png"]
         )
 
-        # End timer
-        end_time = time.time()
-        fps = 1 / (end_time - start_time)
+        if uploaded_image:
 
-        # Annotated Image
-        annotated_frame = results[0].plot()
-        annotated_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            file_bytes = np.asarray(
+                bytearray(uploaded_image.read()),
+                dtype=np.uint8
+            )
+            image = cv2.imdecode(file_bytes, 1)
 
-        col1, col2 = st.columns([2, 1])
+            start = time.time()
 
-        with col1:
-            st.image(annotated_frame, use_column_width=True)
+            results = model.predict(
+                source=image,
+                conf=confidence,
+                iou=iou,
+                imgsz=imgsz,
+                classes=selected_class_ids,
+                device="cpu"
+            )
 
-        with col2:
-            st.metric("⚡ FPS", f"{fps:.2f}")
-            st.metric("📦 Objects Detected", len(results[0].boxes))
-            st.metric("🎯 Confidence", f"{confidence}")
+            end = time.time()
+            fps = 1 / (end - start)
 
-        # Download Button
-        _, buffer = cv2.imencode(".jpg", cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR))
-        st.download_button(
-            label="📥 Download Result Image",
-            data=buffer.tobytes(),
-            file_name="detection_result.jpg",
-            mime="image/jpeg"
+            annotated = results[0].plot()
+            annotated = cv2.cvtColor(
+                annotated,
+                cv2.COLOR_BGR2RGB
+            )
+
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                st.image(annotated, use_column_width=True)
+
+            with col2:
+                st.metric("⚡ FPS", f"{fps:.2f}")
+                st.metric("📦 Objects", len(results[0].boxes))
+                st.metric("🎯 Confidence", confidence)
+
+            # Download button
+            _, buffer = cv2.imencode(
+                ".jpg",
+                cv2.cvtColor(
+                    annotated,
+                    cv2.COLOR_RGB2BGR
+                )
+            )
+
+            st.download_button(
+                "📥 Download Result",
+                buffer.tobytes(),
+                "result.jpg",
+                "image/jpeg"
+            )
+
+    # ---------------- VIDEO ----------------
+    if mode == "Video":
+
+        uploaded_video = st.file_uploader(
+            "Upload Video",
+            type=["mp4", "avi", "mov"]
         )
 
-# --------------------------------------------------
-# Advanced Analytics Tab
-# --------------------------------------------------
+        if uploaded_video:
+
+            tfile = tempfile.NamedTemporaryFile(delete=False)
+            tfile.write(uploaded_video.read())
+
+            cap = cv2.VideoCapture(tfile.name)
+            stframe = st.empty()
+
+            fps_list = []
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                start = time.time()
+
+                results = model.predict(
+                    source=frame,
+                    conf=confidence,
+                    iou=iou,
+                    imgsz=imgsz,
+                    classes=selected_class_ids,
+                    device="cpu"
+                )
+
+                end = time.time()
+                fps = 1 / (end - start)
+                fps_list.append(fps)
+
+                annotated = results[0].plot()
+                annotated = cv2.cvtColor(
+                    annotated,
+                    cv2.COLOR_BGR2RGB
+                )
+
+                stframe.image(annotated)
+
+            cap.release()
+            st.success("Video Processing Completed")
+
+# -------------------------------------------------
+# ANALYTICS TAB
+# -------------------------------------------------
 with tab2:
 
-    if uploaded_file:
+    if "results" in locals():
 
         boxes = results[0].boxes
 
@@ -106,35 +195,57 @@ with tab2:
             class_ids = boxes.cls.cpu().numpy()
             conf_scores = boxes.conf.cpu().numpy()
 
-            # -----------------------------------
-            # Class Distribution
-            # -----------------------------------
             st.subheader("📌 Class Distribution")
+            st.bar_chart(
+                pd.Series(class_ids).value_counts()
+            )
 
-            class_counts = pd.Series(class_ids).value_counts()
-            st.bar_chart(class_counts)
-
-            # -----------------------------------
-            # Confidence Histogram
-            # -----------------------------------
             st.subheader("📊 Confidence Distribution")
-
-            fig1, ax1 = plt.subplots()
-            ax1.hist(conf_scores, bins=10)
-            ax1.set_xlabel("Confidence Score")
-            ax1.set_ylabel("Frequency")
-            st.pyplot(fig1)
-
-            # -----------------------------------
-            # Real-Time FPS Trend
-            # -----------------------------------
-            st.subheader("⚡ FPS Trend")
-
-            if "fps_history" not in st.session_state:
-                st.session_state.fps_history = []
-
-            st.session_state.fps_history.append(fps)
-            st.line_chart(st.session_state.fps_history)
+            fig, ax = plt.subplots()
+            ax.hist(conf_scores, bins=10)
+            ax.set_xlabel("Confidence Score")
+            ax.set_ylabel("Frequency")
+            st.pyplot(fig)
 
         else:
-            st.info("No detections available for analytics.")
+            st.info("No detections available.")
+
+# -------------------------------------------------
+# VALIDATION TAB
+# -------------------------------------------------
+with tab3:
+
+    st.subheader("Model Validation")
+
+    dataset_yaml = st.text_input(
+        "Enter dataset YAML path (example: datasets/data.yaml)"
+    )
+
+    if st.button("Run Validation") and dataset_yaml:
+
+        with st.spinner("Validating Model..."):
+
+            metrics = model.val(data=dataset_yaml)
+
+            st.write("### Evaluation Metrics")
+            st.write(metrics.results_dict)
+
+            if hasattr(metrics, "confusion_matrix"):
+                cm = metrics.confusion_matrix.matrix
+
+                fig2, ax2 = plt.subplots(figsize=(8, 6))
+                sns.heatmap(
+                    cm,
+                    annot=True,
+                    fmt="d",
+                    cmap="Blues"
+                )
+                ax2.set_title("Confusion Matrix")
+                st.pyplot(fig2)
+
+st.markdown("""
+<hr>
+<center>
+Built with ❤️ by Ashish | YOLOv8 Powered
+</center>
+""", unsafe_allow_html=True)
