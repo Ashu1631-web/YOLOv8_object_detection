@@ -1,8 +1,5 @@
-streamlit
 ultralytics
-opencv-python-headless
+streamlit
+opencv-python
 numpy
-pillow
-matplotlib
-scikit-learn
-reportlab
+torch
