@@ -2,60 +2,35 @@ import streamlit as st
 from ultralytics import YOLO
 import cv2
 import tempfile
-import os
 import time
 import numpy as np
 
-st.set_page_config(page_title="YOLOv8 Advanced Detection", layout="wide")
+st.set_page_config(page_title="YOLOv8 Detection", layout="wide")
 
 st.title("🚀 YOLOv8 Object Detection + Tracking")
 
-# ===============================
-# SIDEBAR SETTINGS
-# ===============================
+# ======================
+# Load Model (Cloud Safe)
+# ======================
+MODEL_PATH = "best.pt"
+model = YOLO(MODEL_PATH)
 
+# ======================
+# Sidebar Controls
+# ======================
 st.sidebar.header("⚙️ Settings")
 
-# Load available models
-if not os.path.exists("models"):
-    st.error("Models folder not found!")
-    st.stop()
-
-model_files = [f for f in os.listdir("models") if f.endswith(".pt")]
-
-if len(model_files) == 0:
-    st.error("No .pt models found inside models/ folder")
-    st.stop()
-
-selected_model = st.sidebar.selectbox("Select Model", model_files)
-
-model_path = os.path.join("models", selected_model)
-model = YOLO(model_path)
-
 confidence = st.sidebar.slider("Confidence Threshold", 0.1, 1.0, 0.25)
-
 enable_tracking = st.sidebar.checkbox("Enable Tracking")
 
-source_option = st.sidebar.radio("Select Source", ["Image", "Video", "Webcam"])
-
-# Get class names safely
-class_names = list(model.names.values())
-
-selected_classes = st.sidebar.multiselect(
-    "Filter Classes (optional)",
-    class_names,
-    default=class_names
+source_option = st.sidebar.radio(
+    "Select Source",
+    ["Image", "Video", "Webcam"]
 )
 
-if selected_classes:
-    class_ids = [class_names.index(cls) for cls in selected_classes]
-else:
-    class_ids = None
-
-# ===============================
-# IMAGE DETECTION
-# ===============================
-
+# ======================
+# IMAGE MODE
+# ======================
 if source_option == "Image":
     uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
@@ -65,22 +40,20 @@ if source_option == "Image":
 
         start = time.time()
 
-        results = model(image, conf=confidence, classes=class_ids)
+        results = model(image, conf=confidence)
 
         end = time.time()
         fps = 1 / (end - start)
 
+        annotated = results[0].plot()
+
+        st.image(annotated, channels="BGR")
+        st.success(f"FPS: {fps:.2f}")
         st.write("Detections:", len(results[0].boxes))
 
-        annotated = results[0].plot()
-        st.image(annotated, channels="BGR")
-
-        st.success(f"FPS: {fps:.2f}")
-
-# ===============================
-# VIDEO DETECTION
-# ===============================
-
+# ======================
+# VIDEO MODE
+# ======================
 elif source_option == "Video":
     uploaded_video = st.file_uploader("Upload Video", type=["mp4", "avi", "mov"])
 
@@ -104,7 +77,7 @@ elif source_option == "Video":
             if enable_tracking:
                 results = model.track(frame, conf=confidence, persist=True)
             else:
-                results = model(frame, conf=confidence, classes=class_ids)
+                results = model(frame, conf=confidence)
 
             end = time.time()
 
@@ -120,10 +93,9 @@ elif source_option == "Video":
             avg_fps = frame_count / total_time
             st.success(f"Average FPS: {avg_fps:.2f}")
 
-# ===============================
-# WEBCAM (Streamlit Compatible)
-# ===============================
-
+# ======================
+# WEBCAM (Cloud Safe)
+# ======================
 elif source_option == "Webcam":
     picture = st.camera_input("Capture Frame")
 
@@ -133,7 +105,7 @@ elif source_option == "Webcam":
 
         start = time.time()
 
-        results = model(frame, conf=confidence, classes=class_ids)
+        results = model(frame, conf=confidence)
 
         end = time.time()
 
@@ -142,3 +114,4 @@ elif source_option == "Webcam":
 
         fps = 1 / (end - start)
         st.success(f"FPS: {fps:.2f}")
+        st.write("Detections:", len(results[0].boxes))
