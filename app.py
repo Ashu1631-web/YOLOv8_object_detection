@@ -76,30 +76,29 @@ if os.path.exists(dataset_path):
     ]
 
     if supported_files:
-        # Sort files for clean display
-supported_files = sorted(supported_files)
 
-# Create display-friendly names
-display_names = {f: f[:40] + "..." if len(f) > 40 else f for f in supported_files}
+        supported_files = sorted(supported_files)
 
-selected_display = st.selectbox(
-    "Select File from Dataset (Search Enabled)",
-    list(display_names.values())
-)
+        search_term = st.text_input("🔍 Search file name")
 
-# Get original filename
-selected_file = None
-for key, value in display_names.items():
-    if value == selected_display:
-        selected_file = key
-        break
+        filtered_files = [
+            f for f in supported_files
+            if search_term.lower() in f.lower()
+        ]
+
+        selected_file = st.selectbox(
+            "Select File from Dataset",
+            filtered_files
+        )
 
         if selected_file:
+
             file_path = os.path.join(dataset_path, selected_file)
             file_ext = selected_file.split(".")[-1].lower()
 
             # -------- IMAGE --------
             if file_ext in ["jpg", "jpeg", "png"]:
+
                 img = cv2.imread(file_path)
 
                 start_time = time.time()
@@ -107,6 +106,7 @@ for key, value in display_names.items():
                 end_time = time.time()
 
                 fps = 1 / (end_time - start_time)
+
                 annotated = results[0].plot()
 
                 st.image(annotated, channels="BGR")
@@ -114,6 +114,7 @@ for key, value in display_names.items():
 
             # -------- VIDEO --------
             elif file_ext == "mp4":
+
                 cap = cv2.VideoCapture(file_path)
                 stframe = st.empty()
 
@@ -127,6 +128,7 @@ for key, value in display_names.items():
                     end_time = time.time()
 
                     fps = 1 / (end_time - start_time)
+
                     annotated = results[0].plot()
 
                     stframe.image(annotated, channels="BGR")
@@ -148,10 +150,12 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
+
     file_ext = uploaded_file.name.split(".")[-1].lower()
 
     # -------- IMAGE --------
     if file_ext in ["jpg", "jpeg", "png"]:
+
         image = Image.open(uploaded_file)
         img_array = np.array(image)
 
@@ -160,6 +164,7 @@ if uploaded_file is not None:
         end_time = time.time()
 
         fps = 1 / (end_time - start_time)
+
         annotated = results[0].plot()
 
         st.image(annotated, channels="BGR")
@@ -167,7 +172,9 @@ if uploaded_file is not None:
 
     # -------- VIDEO --------
     elif file_ext == "mp4":
+
         temp_video = "temp.mp4"
+
         with open(temp_video, "wb") as f:
             f.write(uploaded_file.read())
 
@@ -184,6 +191,7 @@ if uploaded_file is not None:
             end_time = time.time()
 
             fps = 1 / (end_time - start_time)
+
             annotated = results[0].plot()
 
             stframe.image(annotated, channels="BGR")
