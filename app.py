@@ -4,73 +4,61 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import tempfile
-import os
 from ultralytics import YOLO
 
-# -------------------------------------------------
+# --------------------------------------------
 # PAGE CONFIG
-# -------------------------------------------------
+# --------------------------------------------
 st.set_page_config(page_title="Ashish AI Vision", layout="wide")
 
 st.markdown("""
-<h1 style='text-align: center; color: #1F77B4;'>
-🚀 Ashish AI Vision - YOLOv8 Detection Suite
-</h1>
+<h2 style='text-align:center;color:#1F77B4;'>
+🚀 Ashish AI Vision - Fast YOLOv8 Dashboard
+</h2>
 <hr>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------
-# MODEL LOAD (CACHED)
-# -------------------------------------------------
+# --------------------------------------------
+# LAZY MODEL LOAD FUNCTION
+# --------------------------------------------
 @st.cache_resource
-def load_model(model_path):
-    return YOLO(model_path)
+def load_model(path):
+    return YOLO(path)
 
-# -------------------------------------------------
+# --------------------------------------------
 # SIDEBAR
-# -------------------------------------------------
-st.sidebar.header("⚙ Detection Settings")
+# --------------------------------------------
+st.sidebar.header("⚙ Settings")
 
 model_option = st.sidebar.selectbox(
-    "Select Model",
-    ["yolov8s.pt", "yolov8n.pt", "best.pt"]
+    "Model",
+    ["yolov8s.pt", "best.pt", "yolov8n.pt"]
 )
 
 confidence = st.sidebar.slider("Confidence", 0.1, 1.0, 0.30)
-iou = st.sidebar.slider("IoU Threshold", 0.1, 1.0, 0.45)
+iou = st.sidebar.slider("IoU", 0.1, 1.0, 0.45)
 imgsz = st.sidebar.selectbox("Image Size", [320, 480, 640], index=2)
 
-model = load_model(model_option)
-
-# Class Filter
-class_filter = st.sidebar.multiselect(
-    "Filter Classes",
-    list(model.names.values())
-)
-
-selected_class_ids = None
-if class_filter:
-    selected_class_ids = [
-        k for k, v in model.names.items()
-        if v in class_filter
-    ]
-
-# -------------------------------------------------
+# --------------------------------------------
 # TABS
-# -------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["🔍 Detection", "📊 Analytics", "🧪 Validation", "📄 Documentation"]
-)
+# --------------------------------------------
+tab1, tab2 = st.tabs(["🔍 Detection", "📊 Analytics"])
 
-# -------------------------------------------------
-# DETECTION
-# -------------------------------------------------
+# --------------------------------------------
+# DETECTION TAB
+# --------------------------------------------
 with tab1:
 
-    mode = st.radio("Select Mode", ["Image", "Video"])
+    mode = st.radio("Mode", ["Image", "Video"])
 
+    # Lazy load model only when needed
+    if "model" not in st.session_state:
+        st.session_state.model = load_model(model_option)
+
+    model = st.session_state.model
+
+    # ---------------- IMAGE ----------------
     if mode == "Image":
 
         uploaded_image = st.file_uploader(
@@ -93,7 +81,6 @@ with tab1:
                 conf=confidence,
                 iou=iou,
                 imgsz=imgsz,
-                classes=selected_class_ids,
                 device="cpu"
             )
 
@@ -101,7 +88,10 @@ with tab1:
             fps = 1 / (end - start)
 
             annotated = results[0].plot()
-            annotated = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+            annotated = cv2.cvtColor(
+                annotated,
+                cv2.COLOR_BGR2RGB
+            )
 
             col1, col2 = st.columns([2, 1])
 
@@ -112,21 +102,62 @@ with tab1:
                 st.metric("⚡ FPS", f"{fps:.2f}")
                 st.metric("📦 Objects", len(results[0].boxes))
 
+            # Download result
             _, buffer = cv2.imencode(
                 ".jpg",
                 cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
             )
 
             st.download_button(
-                "📥 Download Result Image",
+                "📥 Download Result",
                 buffer.tobytes(),
                 "result.jpg",
                 "image/jpeg"
             )
 
-# -------------------------------------------------
-# ANALYTICS
-# -------------------------------------------------
+    # ---------------- VIDEO ----------------
+    if mode == "Video":
+
+        uploaded_video = st.file_uploader(
+            "Upload Video",
+            type=["mp4", "avi", "mov"]
+        )
+
+        if uploaded_video:
+
+            tfile = tempfile.NamedTemporaryFile(delete=False)
+            tfile.write(uploaded_video.read())
+
+            cap = cv2.VideoCapture(tfile.name)
+            stframe = st.empty()
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                results = model.predict(
+                    source=frame,
+                    conf=confidence,
+                    iou=iou,
+                    imgsz=imgsz,
+                    device="cpu"
+                )
+
+                annotated = results[0].plot()
+                annotated = cv2.cvtColor(
+                    annotated,
+                    cv2.COLOR_BGR2RGB
+                )
+
+                stframe.image(annotated)
+
+            cap.release()
+            st.success("Video Processing Completed")
+
+# --------------------------------------------
+# ANALYTICS TAB (Lightweight)
+# --------------------------------------------
 with tab2:
 
     if "results" in locals():
@@ -138,85 +169,15 @@ with tab2:
             class_ids = boxes.cls.cpu().numpy()
             conf_scores = boxes.conf.cpu().numpy()
 
-            st.subheader("📌 Class Distribution")
+            st.subheader("Class Distribution")
             st.bar_chart(
                 pd.Series(class_ids).value_counts()
             )
 
-            st.subheader("📊 Confidence Distribution")
+            st.subheader("Confidence Distribution")
             fig, ax = plt.subplots()
             ax.hist(conf_scores, bins=10)
             st.pyplot(fig)
 
         else:
-            st.info("No detections available.")
-
-# -------------------------------------------------
-# VALIDATION
-# -------------------------------------------------
-with tab3:
-
-    st.subheader("Model Validation")
-
-    dataset_yaml = st.text_input(
-        "Dataset YAML path (example: datasets/data.yaml)"
-    )
-
-    if st.button("Run Validation") and dataset_yaml:
-
-        with st.spinner("Validating..."):
-
-            metrics = model.val(data=dataset_yaml)
-
-            st.write("### Evaluation Metrics")
-            st.write(metrics.results_dict)
-
-            if hasattr(metrics, "confusion_matrix"):
-                cm = metrics.confusion_matrix.matrix
-                fig2, ax2 = plt.subplots(figsize=(8, 6))
-                sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
-                ax2.set_title("Confusion Matrix")
-                st.pyplot(fig2)
-
-# -------------------------------------------------
-# DOCUMENTATION (README + REPORT)
-# -------------------------------------------------
-with tab4:
-
-    st.subheader("📘 Project README")
-
-    if os.path.exists("README.md"):
-        with open("README.md", "r", encoding="utf-8") as f:
-            readme_content = f.read()
-            st.markdown(readme_content)
-    else:
-        st.warning("README.md not found in repository.")
-
-    st.divider()
-
-    st.subheader("📑 Project Report")
-
-    if os.path.exists("project_report.pdf"):
-        with open("project_report.pdf", "rb") as pdf_file:
-            PDFbyte = pdf_file.read()
-
-        st.download_button(
-            label="📥 Download Project Report",
-            data=PDFbyte,
-            file_name="project_report.pdf",
-            mime="application/pdf"
-        )
-
-        st.success("Report ready for download.")
-    else:
-        st.warning("project_report.pdf not found in repository.")
-
-# -------------------------------------------------
-# FOOTER
-# -------------------------------------------------
-st.markdown("""
-<hr>
-<center>
-Built with ❤️ by Ashish | YOLOv8 Powered | Streamlit Cloud Ready
-</center>
-""", unsafe_allow_html=True)
+            st.info("No detections yet.")
