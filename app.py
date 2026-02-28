@@ -76,7 +76,23 @@ if os.path.exists(dataset_path):
     ]
 
     if supported_files:
-        selected_file = st.selectbox("Select File from Dataset", supported_files)
+        # Sort files for clean display
+supported_files = sorted(supported_files)
+
+# Create display-friendly names
+display_names = {f: f[:40] + "..." if len(f) > 40 else f for f in supported_files}
+
+selected_display = st.selectbox(
+    "Select File from Dataset (Search Enabled)",
+    list(display_names.values())
+)
+
+# Get original filename
+selected_file = None
+for key, value in display_names.items():
+    if value == selected_display:
+        selected_file = key
+        break
 
         if selected_file:
             file_path = os.path.join(dataset_path, selected_file)
